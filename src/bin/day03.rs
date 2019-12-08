@@ -1,6 +1,5 @@
 use std::fs::File;
-use std::io::BufRead;
-use std::io::BufReader;
+use std::io::{BufRead, BufReader};
 
 #[derive(Clone, Debug, PartialEq)]
 struct Point {
@@ -9,6 +8,8 @@ struct Point {
 }
 
 impl Point {
+    const ORIGIN: Point = Point { x: 0, y: 0 };
+
     fn go(&self, x: i32, y: i32) -> Self {
         Self {
             x: self.x + x,
@@ -83,6 +84,28 @@ impl Line {
             y: h_line.start.y,
         })
     }
+
+    fn length(&self) -> i32 {
+        self.start.distance(&self.end)
+    }
+
+    fn crosses_point(&self, point: &Point) -> bool {
+        if self.is_horizontal() {
+            let (left, right) = if self.start.x < self.end.x {
+                (&self.start, &self.end)
+            } else {
+                (&self.end, &self.start)
+            };
+            left.x <= point.x && point.x <= right.x && point.y == left.y
+        } else {
+            let (bottom, top) = if self.start.y < self.end.y {
+                (&self.start, &self.end)
+            } else {
+                (&self.end, &self.start)
+            };
+            bottom.y <= point.y && point.y <= top.y && point.x == top.x
+        }
+    }
 }
 
 struct Wire {
@@ -128,18 +151,48 @@ impl Wire {
         for line in self.lines.iter() {
             for other_line in other.lines.iter() {
                 if let Some(point) = line.intersect(&other_line) {
-                    intersections.push(point);
+                    if point != Point::ORIGIN {
+                        intersections.push(point);
+                    }
                 }
             }
         }
         intersections
     }
 
+    fn steps(&self, target: &Point) -> Option<i32> {
+        let mut count: i32 = 0;
+        for line in self.lines.iter() {
+            if line.crosses_point(&target) {
+                return Some(count + line.start.distance(&target));
+            }
+            count = count + line.length();
+        }
+        None
+    }
+
+    fn find_min_delay(&self, other: &Wire) -> Option<i32> {
+        self.intersections(other)
+            .iter()
+            .map(|point| {
+                let steps = self.steps(&point);
+                let other_steps = other.steps(&point);
+
+                match (steps, other_steps) {
+                    (Some(steps), Some(other_steps)) => Some(steps + other_steps),
+                    _ => None,
+                }
+            })
+            .filter(|option| option.is_some())
+            .map(|option| option.unwrap())
+            .min()
+    }
+
     fn closest_intersection(&self, other: &Wire) -> Option<Point> {
         let mut intersections = self.intersections(other);
         intersections.sort_by(|a, b| a.length().cmp(&b.length()));
 
-        match intersections.iter().filter(|a| a.x > 0 || a.y > 0).next() {
+        match intersections.iter().next() {
             Some(point) => Some(point.clone()),
             None => None,
         }
@@ -167,6 +220,13 @@ fn main() {
         wire1
             .closest_distance(&wire2)
             .expect("Could not find closest distance!")
+    );
+
+    println!(
+        "Minimum delay {}",
+        wire1
+            .find_min_delay(&wire2)
+            .expect("Could not find min delay!")
     );
 }
 
@@ -288,6 +348,17 @@ mod tests {
     }
 
     #[test]
+    fn intersect_point() {
+        let line = Line {
+            start: Point { x: 1, y: 4 },
+            end: Point { x: 1, y: 10 },
+        };
+        let point = Point { x: 1, y: 5 };
+
+        assert!(line.crosses_point(&point));
+    }
+
+    #[test]
     fn compute_closest_distance() {
         let wire1 = Wire::new("R8,U5,L5,D3");
         let wire2 = Wire::new("U7,R6,D4,L4");
@@ -317,5 +388,42 @@ mod tests {
         let wire2 = Wire::new("U98,R91,D20,R16,D67,R40,U7,R15,U6,R7");
 
         assert_eq!(wire1.closest_distance(&wire2).unwrap(), 135);
+    }
+
+    #[test]
+    fn steps_1() {
+        let wire1 = Wire::new("R8,U5,L5,D3");
+
+        assert_eq!(wire1.steps(&Point { x: 3, y: 3 }), Some(20));
+    }
+
+    #[test]
+    fn steps_2() {
+        let wire1 = Wire::new("U7,R6,D4,L4");
+
+        assert_eq!(wire1.steps(&Point { x: 3, y: 3 }), Some(20));
+    }
+
+    #[test]
+    fn min_delay_1() {
+        let wire1 = Wire::new("R8,U5,L5,D3");
+        let wire2 = Wire::new("U7,R6,D4,L4");
+        assert_eq!(wire1.find_min_delay(&wire2), Some(30));
+    }
+
+    #[test]
+    fn mind_delay_2() {
+        let wire1 = Wire::new("R75,D30,R83,U83,L12,D49,R71,U7,L72");
+        let wire2 = Wire::new("U62,R66,U55,R34,D71,R55,D58,R83");
+
+        assert_eq!(wire1.find_min_delay(&wire2), Some(610))
+    }
+
+    #[test]
+    fn min_delay_3() {
+        let wire1 = Wire::new("R98,U47,R26,D63,R33,U87,L62,D20,R33,U53,R51");
+        let wire2 = Wire::new("U98,R91,D20,R16,D67,R40,U7,R15,U6,R7");
+
+        assert_eq!(wire1.find_min_delay(&wire2), Some(410));
     }
 }
