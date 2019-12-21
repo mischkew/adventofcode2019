@@ -1,3 +1,6 @@
+use std::fs::File;
+use std::io::prelude::*;
+
 pub struct Intcode {
     data: Vec<i32>,
     position: usize,
@@ -15,11 +18,30 @@ enum Operation {
     Multiply,
     Input,
     Output,
+    JumpIfTrue,
+    JumpIfFalse,
+    LessThan,
+    Equals,
     Halt,
 }
 
 impl Intcode {
     pub fn new(data: Vec<i32>) -> Intcode {
+        Intcode { data, position: 0 }
+    }
+
+    pub fn from_file(filename: &str) -> Intcode {
+        let mut io = File::open(filename).expect("File not opened.");
+        let mut contents = String::new();
+
+        io.read_to_string(&mut contents)
+            .expect("Failed to read file.");
+
+        let data = contents
+            .trim_end()
+            .split(",")
+            .map(|a| a.parse().unwrap())
+            .collect();
         Intcode { data, position: 0 }
     }
 
@@ -36,6 +58,10 @@ impl Intcode {
         self.position = self.position + count as usize;
 
         ints
+    }
+
+    fn jump(&mut self, position: usize) {
+        self.position = position;
     }
 
     fn get_input(&self, parameter: &Parameter) -> i32 {
@@ -56,7 +82,7 @@ impl Intcode {
         self.read(1)[0]
     }
 
-    pub fn run(&mut self) {
+    pub fn run(&mut self, input: i32) {
         loop {
             let (operation, parameters) = self.next();
 
@@ -77,11 +103,47 @@ impl Intcode {
                 }
                 Operation::Input => {
                     assert_eq!(parameters.len(), 1);
-                    self.write_at(self.get_target(&parameters[0]), 1);
+                    self.write_at(self.get_target(&parameters[0]), input);
                 }
                 Operation::Output => {
                     assert_eq!(parameters.len(), 1);
                     println!("Output: {}", self.get_input(&parameters[0]));
+                }
+                Operation::JumpIfTrue => {
+                    assert_eq!(parameters.len(), 2);
+
+                    let condition = self.get_input(&parameters[0]);
+                    let jump_position = self.get_input(&parameters[1]);
+
+                    if condition != 0 {
+                        self.jump(jump_position as usize);
+                    }
+                }
+                Operation::JumpIfFalse => {
+                    assert_eq!(parameters.len(), 2);
+
+                    let condition = self.get_input(&parameters[0]);
+                    let jump_position = self.get_input(&parameters[1]);
+
+                    if condition == 0 {
+                        self.jump(jump_position as usize);
+                    }
+                }
+                Operation::LessThan => {
+                    assert_eq!(parameters.len(), 3);
+
+                    let a = self.get_input(&parameters[0]);
+                    let b = self.get_input(&parameters[1]);
+                    let result = if a < b { 1 } else { 0 };
+                    self.write_at(self.get_target(&parameters[2]), result);
+                }
+                Operation::Equals => {
+                    assert_eq!(parameters.len(), 3);
+
+                    let a = self.get_input(&parameters[0]);
+                    let b = self.get_input(&parameters[1]);
+                    let result = if a == b { 1 } else { 0 };
+                    self.write_at(self.get_target(&parameters[2]), result);
                 }
                 Operation::Halt => break,
             }
@@ -99,6 +161,10 @@ impl Intcode {
             2 => (Operation::Multiply, 3),
             3 => (Operation::Input, 1),
             4 => (Operation::Output, 1),
+            5 => (Operation::JumpIfTrue, 2),
+            6 => (Operation::JumpIfFalse, 2),
+            7 => (Operation::LessThan, 3),
+            8 => (Operation::Equals, 3),
             99 => (Operation::Halt, 0),
             _ => panic!("Unknown operation {}", opcode),
         };
