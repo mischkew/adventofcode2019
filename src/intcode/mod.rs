@@ -1,6 +1,7 @@
 use std::fs::File;
 use std::io::prelude::*;
 
+#[derive(Clone)]
 pub struct Intcode {
     data: Vec<i32>,
     position: usize,
@@ -82,7 +83,10 @@ impl Intcode {
         self.read(1)[0]
     }
 
-    pub fn run(&mut self, input: i32) {
+    pub fn run(&mut self, inputs: Vec<i32>) -> Vec<i32> {
+        let mut inputs = inputs.iter();
+        let mut outputs = vec![];
+
         loop {
             let (operation, parameters) = self.next();
 
@@ -103,11 +107,15 @@ impl Intcode {
                 }
                 Operation::Input => {
                     assert_eq!(parameters.len(), 1);
-                    self.write_at(self.get_target(&parameters[0]), input);
+                    if let Some(input) = inputs.next() {
+                        self.write_at(self.get_target(&parameters[0]), *input);
+                    } else {
+                        panic!("Too few inputs provided!");
+                    }
                 }
                 Operation::Output => {
                     assert_eq!(parameters.len(), 1);
-                    println!("Output: {}", self.get_input(&parameters[0]));
+                    outputs.push(self.get_input(&parameters[0]));
                 }
                 Operation::JumpIfTrue => {
                     assert_eq!(parameters.len(), 2);
@@ -148,6 +156,8 @@ impl Intcode {
                 Operation::Halt => break,
             }
         }
+
+        outputs
     }
 
     fn next(&mut self) -> (Operation, Vec<Parameter>) {
